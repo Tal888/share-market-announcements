@@ -95,9 +95,10 @@ I'm an aspiring Data Analyst, and this project is part of my portfolio. I'm usin
    pip install requests beautifulsoup4 lxml pandas python-dotenv
    ```
 
-2. Create a `.env` file in the project root with your contact email — SEC requires every request to identify the requester:
+2. Copy `.env.example` to `.env` and fill in your Anthropic API key and contact email — SEC requires every request to identify the requester:
 
    ```
+   ANTHROPIC_API_KEY=your-api-key
    SEC_USER_EMAIL=your.name@example.com
    ```
 
