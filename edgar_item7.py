@@ -1,0 +1,189 @@
+"""
+Extract Item 7 (MD&A) from a company's 10-K filing on SEC EDGAR.
+Stores the result in a pandas DataFrame.
+"""
+
+import os
+import re
+import time
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+import warnings
+from bs4 import XMLParsedAsHTMLWarning
+
+# Load env variables
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SEC_USER_EMAIL = os.getenv("SEC_USER_EMAIL")
+
+# SEC requires a User-Agent header identifying the requester.
+HEADERS = {
+    "User-Agent": f"Portfolio Project {SEC_USER_EMAIL}",
+    "Accept-Encoding": "gzip, deflate"
+}
+
+# SEC 10-K filings are Inline XBRL (HTML with embedded XML namespaces).
+# The HTML parser is correct here; suppress the misleading warning.
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+def get_cik_from_ticker(ticker: str) -> str:
+    """Look up a company's CIK number from its ticker symbol."""
+    url = "https://www.sec.gov/files/company_tickers.json"
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    ticker_upper = ticker.upper()
+    for entry in data.values():
+        if entry["ticker"] == ticker_upper:
+            # CIK must be zero-padded to 10 digits for the submissions API
+            return str(entry["cik_str"]).zfill(10)
+    raise ValueError(f"Ticker {ticker} not found in EDGAR")
+
+
+def get_10k_filings(cik: str, limit: int = 3) -> list[dict]:
+    """Get a list of recent 10-K filings for a given CIK."""
+    url = f"https://data.sec.gov/submissions/CIK{cik}.json"
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+
+    recent = data["filings"]["recent"]
+    filings = []
+    for i, form in enumerate(recent["form"]):
+        if form == "10-K":
+            filings.append({
+                "accession_number": recent["accessionNumber"][i],
+                "filing_date": recent["filingDate"][i],
+                "report_date": recent["reportDate"][i],
+                "primary_document": recent["primaryDocument"][i],
+            })
+            if len(filings) >= limit:
+                break
+    return filings
+
+
+def fetch_10k_document(cik: str, accession_number: str, primary_document: str) -> str:
+    """Download the raw HTML of a 10-K filing."""
+    accession_clean = accession_number.replace("-", "")
+    url = (
+        f"https://www.sec.gov/Archives/edgar/data/"
+        f"{int(cik)}/{accession_clean}/{primary_document}"
+    )
+    resp = requests.get(url, headers=HEADERS, timeout=60)
+    resp.raise_for_status()
+    print(f"URL = {url}")
+    return resp.text
+
+
+def extract_item_7(html: str) -> str:
+    """
+    Extract the text of Item 7 (MD&A) from a 10-K HTML document.
+
+    Strategy: convert HTML to clean text, then locate the boundaries of
+    Item 7 using regex patterns. Item 7 ends at Item 7A (Quantitative and
+    Qualitative Disclosures About Market Risk).
+    """
+    soup = BeautifulSoup(html, "lxml")
+
+    # Remove scripts, styles, and hidden elements
+    for tag in soup(["script", "style"]):
+        tag.decompose()
+
+    # Get clean text with reasonable spacing
+    text = soup.get_text(separator="\n")
+
+    # Normalize whitespace: collapse multiple blank lines and spaces
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n", "\n\n", text)
+
+    # Build regexes to find Item 7 start and Item 7A start (the end boundary).
+    # Filings vary: "ITEM 7.", "Item 7 -", "Item 7:", with varying whitespace.
+    # We require the section heading to appear on its own line or near one,
+    # and we look for the SECOND occurrence to skip the table of contents.
+    start_pattern = re.compile(
+        r"item\s*7\s*[\.\-:]?\s*management['\u2019]s\s+discussion",
+        re.IGNORECASE,
+    )
+    end_pattern = re.compile(
+        r"item\s*7a\s*[\.\-:]?\s*quantitative",
+        re.IGNORECASE,
+    )
+
+    start_matches = list(start_pattern.finditer(text))
+    end_matches = list(end_pattern.finditer(text))
+
+    if not start_matches or not end_matches:
+        raise ValueError("Could not locate Item 7 boundaries in document")
+
+    # Skip the table of contents: take the second match if available.
+    # The TOC entry and the actual section heading look the same textually,
+    # but the TOC is near the top of the document.
+    start_idx = start_matches[1].start() if len(start_matches) >= 2 else start_matches[0].start()
+    end_idx = end_matches[1].start() if len(end_matches) >= 2 else end_matches[0].start()
+
+    if end_idx <= start_idx:
+        # Fall back: find the first end match after start
+        end_candidates = [m.start() for m in end_matches if m.start() > start_idx]
+        if not end_candidates:
+            raise ValueError("Item 7A (end boundary) not found after Item 7")
+        end_idx = end_candidates[0]
+
+    item_7_text = text[start_idx:end_idx].strip()
+    return item_7_text
+
+
+def build_item7_dataframe(ticker: str, num_filings: int = 3) -> pd.DataFrame:
+    """Main pipeline: get N most recent 10-Ks for a ticker and extract Item 7."""
+    cik = get_cik_from_ticker(ticker)
+    print(f"CIK for {ticker}: {cik}")
+
+    filings = get_10k_filings(cik, limit=num_filings)
+    print(f"Found {len(filings)} 10-K filings")
+
+    rows = []
+    for filing in filings:
+        print(f"  Processing {filing['filing_date']} (FY {filing['report_date']})...")
+        try:
+            html = fetch_10k_document(cik, filing["accession_number"], filing["primary_document"])
+            item_7 = extract_item_7(html)
+            rows.append({
+                "ticker": ticker.upper(),
+                "cik": cik,
+                "filing_date": filing["filing_date"],
+                "fiscal_year_end": filing["report_date"],
+                "accession_number": filing["accession_number"],
+                "item_7_text": item_7,
+                "item_7_word_count": len(item_7.split()),
+            })
+        except Exception as e:
+            print(f"    Error: {e}")
+            rows.append({
+                "ticker": ticker.upper(),
+                "cik": cik,
+                "filing_date": filing["filing_date"],
+                "fiscal_year_end": filing["report_date"],
+                "accession_number": filing["accession_number"],
+                "item_7_text": None,
+                "item_7_word_count": None,
+            })
+        # SEC rate limit: max 10 requests/second. Sleep to be polite.
+        time.sleep(0.2)
+
+    return pd.DataFrame(rows)
+
+
+if __name__ == "__main__":
+    df = build_item7_dataframe("AAPL", num_filings=3)
+
+    # Show summary (truncate the long text column for display)
+    summary = df.drop(columns=["item_7_text"]).copy()
+    print("\n=== Summary ===")
+    print(summary.to_string())
+
+    # Show a preview of one Item 7
+    print("\n=== Preview of most recent Item 7 (first 800 chars) ===")
+    if df.iloc[0]["item_7_text"]:
+        print(df.iloc[0]["item_7_text"][:800])
