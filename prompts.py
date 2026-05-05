@@ -17,7 +17,7 @@ You return results in valid JSON only, with no preamble, no markdown code fences
 """
 
 USER_PROMPT_TEMPLATE = """
-Analyze the following Item 7 (MD&A) text from consecutive years of a company's 10-K filings. The filings are presented in chronological order, oldest first, separated by clear year markers.
+Analyze the following Item 7 (MD&A) text from consecutive years of a company's 10-K filings. The filings are presented in chronological order, oldest first, separated by clear year markers. Each year of item 7 text has a start of year and end of year marker. For example, if the first year is 2025 it will have a marker at the beggining of the text that looks like <Start of 2025> and then a marker at the end of the text <End of 2025> followed immediately by <Start of 2024> and so on for each year.
 
 Your task is to score year-over-year (YoY) changes across three sentiment dimensions. For N years of input, you will produce N-1 YoY change scores per dimension (e.g., 5 years of input → 4 YoY comparisons: Year1→Year2, Year2→Year3, Year3→Year4, Year4→Year5).
 
