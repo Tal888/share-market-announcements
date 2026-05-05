@@ -123,7 +123,9 @@ A few things I've learned from this project that aren't obvious until you start 
 
 ```
 edgar_item7.py    # Main script — extraction pipeline (stages 1–4)
+prompts.py        # System and user prompt templates for the Anthropic API
 CLAUDE.md         # Working notes / project context
 README.md         # This file
-.env              # SEC_USER_EMAIL (not committed)
+.env.example      # Template for required environment variables
+.env              # SEC_USER_EMAIL and ANTHROPIC_API_KEY (not committed)
 ```

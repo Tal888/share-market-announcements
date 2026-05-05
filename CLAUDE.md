@@ -70,6 +70,7 @@ When helping with writing new code, please **outline the components needed to co
 
 ```
 edgar_item7.py          # Main script
+prompts.py              # System and user prompt templates for the Anthropic API
 CLAUDE.md               # This file - project context
 README.md               # Project overview and run instructions
 .env.example            # Template for required env vars (copy to .env)
