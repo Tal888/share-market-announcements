@@ -12,12 +12,24 @@ from bs4 import BeautifulSoup
 import warnings
 from bs4 import XMLParsedAsHTMLWarning
 
-# Load env variables
+
+# Load env variables and create API client for later use
 from dotenv import load_dotenv
+from anthropic import Anthropic
 
 load_dotenv()
 
-SEC_USER_EMAIL = os.getenv("SEC_USER_EMAIL")
+def require_env(var_name: str) -> str:
+    value = os.getenv(var_name)
+    if not value:
+        raise ValueError(f"{var_name} not found in .env file. Copy .env.example into .env and fill in key and email values.")
+    return value
+
+ANTHROPIC_API_KEY = require_env("ANTHROPIC_API_KEY")
+SEC_USER_EMAIL = require_env("SEC_USER_EMAIL")
+
+client = Anthropic(api_key=ANTHROPIC_API_KEY)
+
 
 # SEC requires a User-Agent header identifying the requester.
 HEADERS = {
@@ -174,9 +186,22 @@ def build_item7_dataframe(ticker: str, num_filings: int = 3) -> pd.DataFrame:
 
     return pd.DataFrame(rows)
 
+def combine_item_7(df: pd.DataFrame) -> str:
+    final_text = []
+    for i in range(len(df)):
+        year = df["fiscal_year_end"].iloc[i][:4]
+        text = df["item_7_text"].iloc[i]
+        final_text.append(f"<Start of {year}>{text}<End of {year}>")
+    return "".join(final_text)
+
+
 
 if __name__ == "__main__":
-    df = build_item7_dataframe("AAPL", num_filings=3)
+    df = build_item7_dataframe("AAPL", num_filings=5)
+    user_input = combine_item_7(df)
+    print(f"Length of Combined Item 7 = {len(user_input.split())}")
+    #print(f"df['item_7_text'][0] looks like:\n{df['item_7_text'][0]}")
+    #print(f"Fiscal Year:\n{df['fiscal_year_end'].iloc[0][:4]}")
 
     # Show summary (truncate the long text column for display)
     summary = df.drop(columns=["item_7_text"]).copy()
@@ -184,6 +209,6 @@ if __name__ == "__main__":
     print(summary.to_string())
 
     # Show a preview of one Item 7
-    print("\n=== Preview of most recent Item 7 (first 800 chars) ===")
-    if df.iloc[0]["item_7_text"]:
-        print(df.iloc[0]["item_7_text"][:800])
+    #print("\n=== Preview of most recent Item 7 (first 800 chars) ===")
+    #if df.iloc[0]["item_7_text"]:
+    #    print(df.iloc[0]["item_7_text"][:800])
