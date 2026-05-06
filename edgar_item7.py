@@ -11,11 +11,13 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import warnings
 from bs4 import XMLParsedAsHTMLWarning
+import json
 
 
 # Load env variables and create API client for later use
 from dotenv import load_dotenv
 from anthropic import Anthropic
+from prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 
 load_dotenv()
 
@@ -187,28 +189,76 @@ def build_item7_dataframe(ticker: str, num_filings: int = 3) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 def combine_item_7(df: pd.DataFrame) -> str:
+    # Check if any extracted item 7 texts are empty and raise an error with corresponding years if applicable 
+    if df["item_7_text"].isna().any():
+        empty_years = df.loc[df["item_7_text"].isna()]["fiscal_year_end"].str[:4].tolist()
+        raise ValueError(f"Empty Item 7 Years: {', '.join(empty_years)}")
+
     final_text = []
     for i in range(len(df)):
         year = df["fiscal_year_end"].iloc[i][:4]
         text = df["item_7_text"].iloc[i]
         final_text.append(f"<Start of {year}>{text}<End of {year}>")
-    return "".join(final_text)
+    chronological_text = final_text[::-1]
+    return "".join(chronological_text)
+
+def get_analysis(
+    user_message: str,
+    system: str = SYSTEM_PROMPT,
+    model: str = "claude-haiku-4-5-20251001",
+    max_tokens: int = 8192
+) -> dict:
+    message = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": user_message},
+                  {"role": "assistant", "content": "```json"}],
+        stop_sequences=["```"]
+    )
+    raw_text = message.content[0].text
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse JSON: {e}")
+        print(f"Raw response was:\n{raw_text}")
+        raise
 
 
-
-if __name__ == "__main__":
+def main():
     df = build_item7_dataframe("AAPL", num_filings=5)
-    user_input = combine_item_7(df)
-    print(f"Length of Combined Item 7 = {len(user_input.split())}")
+    item_7_text = combine_item_7(df)
+    user_message = USER_PROMPT_TEMPLATE.replace("{item_7_text}", item_7_text)
+    system = SYSTEM_PROMPT
+
+    # Customisable Model Parameters
+    model = "claude-haiku-4-5-20251001"
+    max_tokens = 8192
+
+    num_tokens = client.messages.count_tokens(
+        model=model,
+        system=system,
+        messages=[{"role": "user", "content": user_message}]
+        )
+    print(f"Number of Input Tokens = {num_tokens.input_tokens}")
+    results = get_analysis(user_message=user_message, system=system, model=model, max_tokens=max_tokens)
+
+    print(json.dumps(results, indent=2))
+
+    #print(f"Length of Combined Item 7 = {len(user_message.split())}")
     #print(f"df['item_7_text'][0] looks like:\n{df['item_7_text'][0]}")
     #print(f"Fiscal Year:\n{df['fiscal_year_end'].iloc[0][:4]}")
 
     # Show summary (truncate the long text column for display)
-    summary = df.drop(columns=["item_7_text"]).copy()
-    print("\n=== Summary ===")
-    print(summary.to_string())
+    #summary = df.drop(columns=["item_7_text"]).copy()
+    #print("\n=== Summary ===")
+    #print(summary.to_string())
 
     # Show a preview of one Item 7
     #print("\n=== Preview of most recent Item 7 (first 800 chars) ===")
     #if df.iloc[0]["item_7_text"]:
     #    print(df.iloc[0]["item_7_text"][:800])
+
+
+if __name__ == "__main__":
+    main()
