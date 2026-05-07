@@ -50,8 +50,14 @@ I'm an aspiring Data Analyst, and this project is part of my portfolio. I'm usin
         │
         ▼
   ┌──────────────────────────┐
-  │ 5. Sentiment & tone      │   Anthropic API   ◀── in progress
+  │ 5. Sentiment & tone      │   Anthropic API
   │    analysis              │
+  └──────────────────────────┘
+        │
+        ▼
+  ┌──────────────────────────┐
+  │ 6. Visualisation of      │   ◀── in progress
+  │    results               │
   └──────────────────────────┘
         │
         ▼
@@ -68,15 +74,16 @@ I'm an aspiring Data Analyst, and this project is part of my portfolio. I'm usin
 - Parsing the HTML with BeautifulSoup and isolating Item 7 between the *"Item 7. Management's Discussion"* and *"Item 7A. Quantitative..."* boundaries with regex
 - Skipping the table-of-contents match by taking the second occurrence of the start pattern
 - Storing results in a pandas DataFrame with metadata (ticker, CIK, filing date, fiscal year end, accession number, extracted text, word count)
+- Connected the Anthropic API, fed the extracted Item 7 text into Claude, and received a structured JSON response with sentiment and tone scores
+- Authored dedicated `SYSTEM` and `USER` prompt templates in `prompts.py` to guide the LLM's analysis
 
 **In progress**
-- Connecting the Anthropic API and feeding the extracted Item 7 text in. The first job for the LLM is **validation** — confirming that the extracted text is actually Item 7 and doesn't bleed into adjacent sections of the 10-K. Once I trust the extraction, the same pipeline will move on to the sentiment and tone analysis.
+- Storing the JSON response from the LLM in a local data file so I don't need to re-call the API on every run
+- Building a visualisation chart to display the analysis results for a single company across years
 
 **Planned next**
-- Sentiment and tone scoring per filing (e.g. confidence, caution, optimism, risk-language density)
-- Year-over-year comparison for a single company
-- Cross-company comparison within an industry
-- Visualisation of trends over time
+- Once the single-company visualisation is working as intended, run the analysis across multiple companies and chart them together for comparison
+- Once cross-company charting is working, refactor the pipeline to accept a **list of companies** as input rather than a single ticker
 
 ## Tech stack
 
@@ -85,7 +92,9 @@ I'm an aspiring Data Analyst, and this project is part of my portfolio. I'm usin
 - `beautifulsoup4` + `lxml` — HTML parsing
 - `pandas` — tabular storage of extracted filings
 - `python-dotenv` — managing secrets (SEC user email, API keys)
-- `anthropic` *(coming next)* — Claude API for sentiment/tone analysis
+- `anthropic` — Claude API for sentiment/tone analysis
+- `json` — persisting LLM analysis output to disk
+- `matplotlib` *(coming next)* — visualising sentiment and tone trends across years
 
 ## How to run
 
@@ -122,8 +131,9 @@ A few things I've learned from this project that aren't obvious until you start 
 ## Repository structure
 
 ```
-edgar_item7.py    # Main script — extraction pipeline (stages 1–4)
+edgar_item7.py    # Main script — extraction, LLM analysis, and persistence
 prompts.py        # System and user prompt templates for the Anthropic API
+data/             # Saved LLM JSON responses, one file per ticker (e.g. AAPL.json)
 CLAUDE.md         # Working notes / project context
 README.md         # This file
 .env.example      # Template for required environment variables
