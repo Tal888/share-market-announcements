@@ -12,6 +12,7 @@ from bs4 import BeautifulSoup
 import warnings
 from bs4 import XMLParsedAsHTMLWarning
 import json
+from pathlib import Path
 
 
 # Load env variables and create API client for later use
@@ -224,9 +225,19 @@ def get_analysis(
         print(f"Raw response was:\n{raw_text}")
         raise
 
+def save_analysis(response_json: dict, ticker: str):
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
+
+    with open(data_dir / f"{ticker}.json", "w") as f:
+        json.dump(response_json, f, indent=2)
 
 def main():
-    df = build_item7_dataframe("AAPL", num_filings=5)
+    # Customisable Company Ticker and Number of Filings
+    ticker = "AAPL"
+    num_filings = 5
+
+    df = build_item7_dataframe(ticker=ticker, num_filings=num_filings)
     item_7_text = combine_item_7(df)
     user_message = USER_PROMPT_TEMPLATE.replace("{item_7_text}", item_7_text)
     system = SYSTEM_PROMPT
